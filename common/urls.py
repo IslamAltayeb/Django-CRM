@@ -8,6 +8,7 @@ app_name = "api_common"
 
 urlpatterns = [
     path("dashboard/", views.ApiHomeView.as_view()),
+    path('auth/token/', jwt_views.TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path(
         "auth/refresh-token/",
         jwt_views.TokenRefreshView.as_view(),
