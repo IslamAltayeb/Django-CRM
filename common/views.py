@@ -90,6 +90,37 @@ class GetTeamsAndUsersView(APIView):
         return Response(data)
 
 
+class AdminSignupView(APIView):
+    @extend_schema(request=AdminCreateSwaggerSerializer)
+    def post(self, request, format=None):
+        if User.objects.exists():
+            return Response(
+                {"error": "Admin sign up not allowed."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        else:
+            params = request.data
+            if params:
+                user_serializer = CreateUserSerializer(data=params)
+                data = {}
+                if not user_serializer.is_valid():
+                    data["user_errors"] = dict(user_serializer.errors)
+                if data:
+                    return Response(
+                        {"error": True, "errors": data},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+               
+                admin = user_serializer.save(is_active=True)
+                admin.set_password(params.get("password"))
+                admin.save()
+               
+                return Response(
+                    {"error": False, "message": "User Created Successfully"},
+                    status=status.HTTP_201_CREATED,
+                )
+    
+
 class UsersListView(APIView, LimitOffsetPagination):
 
     permission_classes = (IsAuthenticated,)

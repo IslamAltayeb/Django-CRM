@@ -201,7 +201,7 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id","email","profile_pic"]
+        fields = ["id","username","email", "password","profile_pic"] 
 
 
 class ProfileSerializer(serializers.ModelSerializer):
@@ -392,6 +392,16 @@ class UserCreateSwaggerSerializer(serializers.Serializer):
     state = serializers.CharField(max_length=1000)
     pincode = serializers.CharField(max_length=1000)
     country = serializers.CharField(max_length=1000)
+
+class AdminCreateSwaggerSerializer(serializers.Serializer):
+    """
+    It is swagger for creating or updating admin
+    """
+
+    username = serializers.CharField(max_length=1000,required=True)
+    email = serializers.CharField(max_length=1000,required=True)
+    password = serializers.CharField(max_length=1000)
+ 
 
 class UserUpdateStatusSwaggerSerializer(serializers.Serializer):
 
