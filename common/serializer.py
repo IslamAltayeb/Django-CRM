@@ -6,6 +6,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.utils.http import urlsafe_base64_decode
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
+from common.utils import COUNTRIES
 
 from common.models import (
     Address,
@@ -108,14 +109,14 @@ class ShowOrganizationListSerializer(serializers.ModelSerializer):
 
 
 class BillingAddressSerializer(serializers.ModelSerializer):
-    country = serializers.SerializerMethodField()
+    country_display  = serializers.SerializerMethodField(read_only=True)
 
     def get_country(self, obj):
         return obj.get_country_display()
 
     class Meta:
         model = Address
-        fields = ("address_line", "street", "city", "state", "postcode", "country")
+        fields = ("address_line", "street", "city", "state", "postcode", "country", "country_display")
 
     def __init__(self, *args, **kwargs):
         account_view = kwargs.pop("account", False)
@@ -201,11 +202,12 @@ class UserSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id","email","profile_pic"]
+        fields = ["id","username","email","profile_pic"] 
 
 
 class ProfileSerializer(serializers.ModelSerializer):
     # address = BillingAddressSerializer()
+    user_details = UserSerializer(source="user", read_only=True)
 
     class Meta:
         model = Profile
@@ -390,8 +392,18 @@ class UserCreateSwaggerSerializer(serializers.Serializer):
     street = serializers.CharField(max_length=1000)
     city = serializers.CharField(max_length=1000)
     state = serializers.CharField(max_length=1000)
-    pincode = serializers.CharField(max_length=1000)
-    country = serializers.CharField(max_length=1000)
+    postcode = serializers.CharField(max_length=1000)
+    country = serializers.ChoiceField(choices=COUNTRIES)
+
+class AdminCreateSwaggerSerializer(serializers.Serializer):
+    """
+    It is swagger for creating or updating admin
+    """
+
+    username = serializers.CharField(max_length=1000,required=True)
+    email = serializers.CharField(max_length=1000,required=True)
+    password = serializers.CharField(max_length=1000)
+ 
 
 class UserUpdateStatusSwaggerSerializer(serializers.Serializer):
 

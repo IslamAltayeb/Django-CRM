@@ -90,6 +90,37 @@ class GetTeamsAndUsersView(APIView):
         return Response(data)
 
 
+class AdminSignupView(APIView):
+    @extend_schema(request=AdminCreateSwaggerSerializer)
+    def post(self, request, format=None):
+        if User.objects.exists():
+            return Response(
+                {"error": "Admin sign up not allowed."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        else:
+            params = request.data
+            if params:
+                user_serializer = CreateUserSerializer(data=params)
+                data = {}
+                if not user_serializer.is_valid():
+                    data["user_errors"] = dict(user_serializer.errors)
+                if data:
+                    return Response(
+                        {"error": True, "errors": data},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+               
+                admin = user_serializer.save(is_active=True)
+                admin.set_password(params.get("password"))
+                admin.save()
+               
+                return Response(
+                    {"error": False, "message": "User Created Successfully"},
+                    status=status.HTTP_201_CREATED,
+                )
+    
+
 class UsersListView(APIView, LimitOffsetPagination):
 
     permission_classes = (IsAuthenticated,)
@@ -137,8 +168,9 @@ class UsersListView(APIView, LimitOffsetPagination):
                         role=params.get("role"),
                         address=address_obj,
                         org=request.profile.org,
+                        phone = params.get("phone"),
+                        alternate_phone = params.get("alternate_phone")
                     )
-
                     # send_email_to_new_user.delay(
                     #     profile.id,
                     #     request.profile.org.id,
@@ -251,7 +283,7 @@ class UserDetailView(APIView):
         context["assigned_data"] = assigned_data
         comments = profile_obj.user_comments.all()
         context["comments"] = CommentSerializer(comments, many=True).data
-        context["countries"] = COUNTRIES
+        #context["countries"] = COUNTRIES
         return Response(
             {"error": False, "data": context},
             status=status.HTTP_200_OK,
@@ -299,6 +331,8 @@ class UserDetailView(APIView):
             address_obj = address_serializer.save()
             user = serializer.save()
             user.email = user.email
+            user.username = user.username
+            user.set_password(params.get("password"))
             user.save()
         if profile_serializer.is_valid():
             profile = profile_serializer.save()
@@ -327,11 +361,19 @@ class UserDetailView(APIView):
                 status=status.HTTP_403_FORBIDDEN,
             )
         deleted_by = self.request.profile.user.email
-        send_email_user_delete.delay(
-            self.object.user.email,
-            deleted_by=deleted_by,
-        )
+        # send_email_user_delete.delay(
+        #     self.object.user.email,
+        #     deleted_by=deleted_by,
+        # )
+
+        user = self.object.user
+        address = self.object.address
         self.object.delete()
+        if user:
+            user.delete()
+
+        if address:
+            address.delete()
         return Response({"status": "success"}, status=status.HTTP_200_OK)
 
 

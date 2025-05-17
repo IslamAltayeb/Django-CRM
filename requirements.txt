@@ -24,3 +24,4 @@ phonenumbers==8.13.13
 setuptools
 psycopg2-binary>=2.9
 drf-yasg
+djangorestframework-simplejwt  
