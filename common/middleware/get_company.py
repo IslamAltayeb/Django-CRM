@@ -47,12 +47,15 @@ class GetProfileAndOrg(object):
         try :
             request.profile = None
             user_id = None
-            # here I am getting the the jwt token passing in header
+            # here I am getting the jwt token passing in header
             if request.headers.get("Authorization"):
-                token1 = request.headers.get("Authorization")
-                token = token1.split(" ")[1]  # getting the token value
-                decoded = jwt.decode(token, (settings.SECRET_KEY), algorithms=[settings.JWT_ALGO])
-                user_id = decoded['user_id']
+                token1 = request.headers.get("Authorization", "")
+                if token1.startswith("Bearer "):
+                    token = token1.split(" ")[1]  # getting the token value
+                    decoded = jwt.decode(token, (settings.SECRET_KEY), algorithms=[settings.JWT_ALGO])
+                    user_id = decoded['user_id']
+                else:
+                    raise PermissionDenied("Invalid or missing Authorization header")
             api_key = request.headers.get('Token')  # Get API key from request query params
             if api_key:
                 try:
