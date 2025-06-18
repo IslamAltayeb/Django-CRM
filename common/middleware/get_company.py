@@ -62,7 +62,7 @@ class GetProfileAndOrg(object):
                     organization = Org.objects.get(api_key=api_key)
                     api_key_user = organization
                     request.META['org'] = api_key_user.id
-                    profile = Profile.objects.filter(org=api_key_user, role="ADMIN").first()
+                    profile = Profile.objects.filter(org=api_key_user, role__name="ADMIN").first()
                     user_id = profile.user.id
                 except Org.DoesNotExist:
                     raise AuthenticationFailed('Invalid API Key')
@@ -70,6 +70,12 @@ class GetProfileAndOrg(object):
                 if request.headers.get("org"):
                     profile = Profile.objects.get(
                         user_id=user_id, org=request.headers.get("org"), is_active=True
+                    )
+                    if profile:
+                        request.profile = profile
+                else:
+                    profile = Profile.objects.get(
+                        user_id=user_id, is_active=True
                     )
                     if profile:
                         request.profile = profile

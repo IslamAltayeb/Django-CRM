@@ -11,4 +11,5 @@ urlpatterns = [
     path("tasks/", include("tasks.urls", namespace="api_tasks")),
     path("events/", include("events.urls", namespace="api_events")),
     path("cases/", include("cases.urls", namespace="api_cases")),
+    path("roles/", include("role_permission_control.urls", namespace="api_roles")),
 ]

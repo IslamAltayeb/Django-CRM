@@ -24,6 +24,7 @@ from common.templatetags.common_tags import (
 )
 from common.utils import COUNTRIES, ROLES
 from common.base import BaseModel
+from role_permission_control.models import Role, Permission,RolePermission
 
 
 def img_url(self, filename):
@@ -202,7 +203,8 @@ class Profile(BaseModel):
         blank=True,
         null=True,
     )
-    role = models.CharField(max_length=50, choices=ROLES, default="USER")
+    #role = models.CharField(max_length=50, choices=ROLES, default="USER")
+    role = models.ForeignKey(Role,on_delete=models.CASCADE,null=False,blank=True,related_name='user_role')
     has_sales_access = models.BooleanField(default=False)
     has_marketing_access = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
@@ -219,6 +221,15 @@ class Profile(BaseModel):
     def __str__(self):
         return f"{self.user.email} <{self.org.name}>"
 
+    def has_permission(self, name):
+        """
+        Custom method to check if the user's assigned role has a specific permission.
+        """
+        if self.role:
+            # Check if the role has the specific permission
+            return self.role.role_permissions.filter(permission__name=name).exists()
+        return False
+    
     @property
     def is_admin(self):
         return self.is_organization_admin

@@ -15,8 +15,7 @@ from common.utils import COUNTRIES
 from common.tasks import send_email_to_reset_password
 from django.utils import timezone
 from common.token_generator import account_activation_token
-
-
+from role_permission_control.models import Role
 from common.models import (
     Address,
     APISettings,
@@ -118,14 +117,14 @@ class ShowOrganizationListSerializer(serializers.ModelSerializer):
 
 
 class BillingAddressSerializer(serializers.ModelSerializer):
-    country_display  = serializers.SerializerMethodField(read_only=True)
+    #country_display  = serializers.SerializerMethodField(read_only=True)
 
-    def get_country(self, obj):
-        return obj.get_country_display()
+    #def get_country(self, obj):
+    #    return obj.get_country_display()
 
     class Meta:
         model = Address
-        fields = ("address_line", "street", "city", "state", "postcode", "country", "country_display")
+        fields = ("address_line", "street", "city", "state", "postcode", "country")
 
     def __init__(self, *args, **kwargs):
         account_view = kwargs.pop("account", False)
@@ -157,7 +156,13 @@ class CreateUserSerializer(serializers.ModelSerializer):
         super().__init__(*args, **kwargs)
         self.fields["email"].required = True
         self.fields["username"].required = True
-        self.fields["password"].required = True
+        #self.fields["password"].required = True
+        # Only require password if it's a create operation
+        if self.instance is None:
+            self.fields["password"].required = True
+        else:
+            self.fields["password"].required = False
+            self.fields["password"].allow_blank = True
 
     # def validate_email(self, email):
     #     if self.instance:
@@ -189,6 +194,11 @@ class CreateUserSerializer(serializers.ModelSerializer):
         raise serializers.ValidationError(", ".join(str(item) for item in errors))
 
 class CreateProfileSerializer(serializers.ModelSerializer):
+    role = serializers.SlugRelatedField(
+        slug_field='name',  
+        queryset=Role.objects.all()
+    )
+
     class Meta:
         model = Profile
         fields = (
@@ -214,20 +224,29 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ["id","username","email","profile_pic"] 
 
 
+class RoleSerializer(serializers.ModelSerializer):
+
+    class Meta:
+        model = Role
+        fields = ["id","name","description"] 
+
+
 class ProfileSerializer(serializers.ModelSerializer):
-    # address = BillingAddressSerializer()
+    address = BillingAddressSerializer( read_only=True)
     user_details = UserSerializer(source="user", read_only=True)
+    role_details = RoleSerializer(source="role", read_only=True)
 
     class Meta:
         model = Profile
         fields = (
             "id",
             "user_details",
-            "role",
+            "role_details",
             "address",
             "has_marketing_access",
             "has_sales_access",
             "phone",
+            "alternate_phone",
             "date_of_joining",
             "is_active",
         )
@@ -389,12 +408,13 @@ class UserCreateSwaggerSerializer(serializers.Serializer):
     """
     It is swagger for creating or updating user
     """
-    ROLE_CHOICES = ["ADMIN", "USER"]
+    #ROLE_CHOICES = ["ADMIN", "USER"]
 
     username = serializers.CharField(max_length=1000,required=True)
     email = serializers.CharField(max_length=1000,required=True)
     password = serializers.CharField(max_length=1000)
-    role = serializers.ChoiceField(choices = ROLE_CHOICES,required=True)
+    #role = serializers.ChoiceField(choices = ROLE_CHOICES,required=True)
+    role = serializers.CharField(max_length=1000,required=True)
     phone = serializers.CharField(max_length=12)
     alternate_phone = serializers.CharField(max_length=12)
     address_line = serializers.CharField(max_length=10000,required=True)

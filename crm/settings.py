@@ -76,6 +76,7 @@ INSTALLED_APPS = [
     "invoices",
     "events",
     "teams",
+    "role_permission_control",
 ]
 
 MIDDLEWARE = [
