@@ -7,6 +7,7 @@ from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.exceptions import PermissionDenied
 
 from accounts.models import Account
 from accounts.serializer import AccountSerializer
@@ -35,7 +36,8 @@ class CaseListView(APIView, LimitOffsetPagination):
         accounts = Account.objects.filter(org=self.request.profile.org).order_by("-id")
         contacts = Contact.objects.filter(org=self.request.profile.org).order_by("-id")
         profiles = Profile.objects.filter(is_active=True, org=self.request.profile.org)
-        if self.request.profile.role.name != "ADMIN" and not self.request.profile.is_admin:
+
+        if self.request.profile.role.has_permission("View own cases"):
             queryset = queryset.filter(
                 Q(created_by=self.request.profile.user) | Q(assigned_to=self.request.profile)
             ).distinct()
@@ -46,6 +48,8 @@ class CaseListView(APIView, LimitOffsetPagination):
                 Q(created_by=self.request.profile.user) | Q(assigned_to=self.request.profile)
             ).distinct()
             profiles = profiles.filter(role__name="ADMIN")
+        elif not self.request.profile.role.has_permission("View all cases"):
+            raise PermissionDenied("You do not have permission to perform this action.")
 
         if params:
             if params.get("name"):
@@ -93,6 +97,13 @@ class CaseListView(APIView, LimitOffsetPagination):
         tags=["Cases"], parameters=swagger_params1.organization_params,request=CaseCreateSwaggerSerializer
     )
     def post(self, request, *args, **kwargs):
+
+        if not self.request.profile.role.has_permission("Create new cases"): 
+            return Response(
+                {"error": True, "errors": "Permission Denied"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        
         params = request.data
         serializer = CaseCreateSerializer(data=params, request_obj=request)
         if serializer.is_valid():
@@ -132,10 +143,10 @@ class CaseListView(APIView, LimitOffsetPagination):
                 attachment.save()
 
             recipients = list(cases_obj.assigned_to.all().values_list("id", flat=True))
-            send_email_to_assigned_user.delay(
-                recipients,
-                cases_obj.id,
-            )
+            # send_email_to_assigned_user.delay(
+            #     recipients,
+            #     cases_obj.id,
+            # )
             return Response(
                 {"error": False, "message": "Case Created Successfully"},
                 status=status.HTTP_200_OK,
@@ -166,12 +177,21 @@ class CaseDetailView(APIView):
                 {"error": True, "errors": "User company doesnot match with header...."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        if self.request.profile.role.name != "ADMIN" and not self.request.profile.is_admin:
+        
+        if self.request.profile.role.has_permission("Edit own cases"):
             if not (
-                (self.request.profile == cases_object.created_by)
+                (self.request.profile.user == cases_object.created_by)
                 or (self.request.profile in cases_object.assigned_to.all())
             ):
                 return Response(
+                    {
+                        "error": True,
+                        "errors": "You do not have Permission to perform this action",
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+        elif not self.request.profile.role.has_permission("Edit any case"):
+            return Response(
                     {
                         "error": True,
                         "errors": "You do not have Permission to perform this action",
@@ -227,10 +247,10 @@ class CaseDetailView(APIView):
                 cases_object.assigned_to.all().values_list("id", flat=True)
             )
             recipients = list(set(assigned_to_list) - set(previous_assigned_to_users))
-            send_email_to_assigned_user.delay(
-                recipients,
-                cases_object.id,
-            )
+            # send_email_to_assigned_user.delay(
+            #     recipients,
+            #     cases_object.id,
+            # )
             return Response(
                 {"error": False, "message": "Case Updated Successfully"},
                 status=status.HTTP_200_OK,
@@ -250,8 +270,9 @@ class CaseDetailView(APIView):
                 {"error": True, "errors": "User company doesnot match with header...."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        if self.request.profile.role.name != "ADMIN" and not self.request.profile.is_admin:
-            if self.request.profile != self.object.created_by:
+        
+        if self.request.profile.role.has_permission("Delete own cases"):
+            if self.request.profile.user != self.object.created_by:
                 return Response(
                     {
                         "error": True,
@@ -259,6 +280,15 @@ class CaseDetailView(APIView):
                     },
                     status=status.HTTP_403_FORBIDDEN,
                 )
+        elif not self.request.profile.role.has_permission("Delete any case"):
+            return Response(
+                    {
+                        "error": True,
+                        "errors": "You do not have Permission to perform this action",
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+        
         self.object.delete()
         return Response(
             {"error": False, "message": "Case Deleted Successfully."},
@@ -277,12 +307,21 @@ class CaseDetailView(APIView):
             )
         context = {}
         context["cases_obj"] = CaseSerializer(self.cases).data
-        if self.request.profile.role.name != "ADMIN" and not self.request.profile.is_admin:
+
+        if self.request.profile.role.has_permission("View own cases"):
             if not (
-                (self.request.profile == self.cases.created_by)
+                (self.request.profile.user == self.cases.created_by)
                 or (self.request.profile in self.cases.assigned_to.all())
             ):
                 return Response(
+                    {
+                        "error": True,
+                        "errors": "You don't have Permission to perform this action",
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+        elif not self.request.profile.role.has_permission("View all cases"):
+            return Response(
                     {
                         "error": True,
                         "errors": "You don't have Permission to perform this action",
@@ -293,7 +332,7 @@ class CaseDetailView(APIView):
         comment_permission = False
 
         if (
-            self.request.profile == self.cases.created_by
+            self.request.profile.user == self.cases.created_by
             or self.request.profile.is_admin
             or self.request.profile.role.name == "ADMIN"
         ):
@@ -305,7 +344,7 @@ class CaseDetailView(APIView):
                     "user__email"
                 )
             )
-        elif self.request.profile != self.cases.created_by:
+        elif self.request.profile.user != self.cases.created_by:
             if self.cases.created_by:
                 users_mention = [{"username": self.cases.created_by.user.email}]
             else:
@@ -347,7 +386,7 @@ class CaseDetailView(APIView):
         comment_serializer = CommentSerializer(data=params)
         if self.request.profile.role.name != "ADMIN" and not self.request.profile.is_admin:
             if not (
-                (self.request.profile == self.cases_obj.created_by)
+                (self.request.profile.user == self.cases_obj.created_by)
                 or (self.request.profile in self.cases_obj.assigned_to.all())
             ):
                 return Response(
@@ -461,7 +500,7 @@ class CaseAttachmentView(APIView):
         if (
             request.profile.role.name == "ADMIN"
             or request.profile.is_admin
-            or request.profile == self.object.created_by
+            or request.profile.user == self.object.created_by
         ):
             self.object.delete()
             return Response(

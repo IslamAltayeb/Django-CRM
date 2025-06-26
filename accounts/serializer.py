@@ -52,7 +52,7 @@ class AccountSerializer(serializers.ModelSerializer):
             "tags",
             "status",
             "lead",
-            "contact_name",
+            # "contact_name",
             "contacts",
             "assigned_to",
             "teams",
@@ -165,7 +165,7 @@ class AccountCreateSerializer(serializers.ModelSerializer):
             "billing_postcode",
             "billing_country",
             "lead",
-            "contact_name",
+            #"contact_name",
         )
 
 class AccountDetailEditSwaggerSerializer(serializers.Serializer):

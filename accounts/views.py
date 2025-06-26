@@ -12,6 +12,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.generics import GenericAPIView
+from rest_framework.exceptions import PermissionDenied
 
 from accounts import swagger_params1
 from accounts.models import Account, Tags
@@ -65,10 +66,13 @@ class AccountsListView(APIView, LimitOffsetPagination):
     def get_context_data(self, **kwargs):
         params = self.request.query_params
         queryset = self.model.objects.filter(org=self.request.profile.org).order_by("-id")
-        if self.request.profile.role.name != "ADMIN" and not self.request.profile.is_admin:
+
+        if self.request.profile.role.has_permission("View own accounts"):
             queryset = queryset.filter(
                 Q(created_by=self.request.profile.user) | Q(assigned_to=self.request.profile)
             ).distinct()
+        elif not self.request.profile.role.has_permission("View all accounts"):
+            raise PermissionDenied("You do not have permission to perform this action.")
 
         if params:
             if params.get("name"):
@@ -153,6 +157,13 @@ class AccountsListView(APIView, LimitOffsetPagination):
 
     @extend_schema(tags=["Accounts"], parameters=swagger_params1.organization_params,request=AccountWriteSerializer)
     def post(self, request, *args, **kwargs):
+
+        if not self.request.profile.role.has_permission("Create new accounts"): 
+            return Response(
+                {"error": True, "errors": "Permission Denied"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        
         data = request.data
         serializer = AccountCreateSerializer(
             data=data, request_obj=request, account=True
@@ -200,10 +211,10 @@ class AccountsListView(APIView, LimitOffsetPagination):
             recipients = list(
                 account_object.assigned_to.all().values_list("id", flat=True)
             )
-            send_email_to_assigned_user.delay(
-                recipients,
-                account_object.id,
-            )
+            # send_email_to_assigned_user.delay(
+            #     recipients,
+            #     account_object.id,
+            # )
             return Response(
                 {"error": False, "message": "Account Created Successfully"},
                 status=status.HTTP_200_OK,
@@ -236,12 +247,9 @@ class AccountDetailView(APIView):
         )
 
         if serializer.is_valid():
-            if (
-                self.request.profile.role.name != "ADMIN"
-                and not self.request.profile.is_admin
-            ):
+            if self.request.profile.role.has_permission("Edit own accounts"):
                 if not (
-                    (self.request.profile == account_object.created_by)
+                    (self.request.profile.user == account_object.created_by)
                     or (self.request.profile in account_object.assigned_to.all())
                 ):
                     return Response(
@@ -251,6 +259,15 @@ class AccountDetailView(APIView):
                         },
                         status=status.HTTP_403_FORBIDDEN,
                     )
+            elif not self.request.profile.role.has_permission("Edit any account"):
+                return Response(
+                        {
+                            "error": True,
+                            "errors": "You do not have Permission to perform this action",
+                        },
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+                
             account_object = serializer.save()
             previous_assigned_to_users = list(
                 account_object.assigned_to.all().values_list("id", flat=True)
@@ -302,10 +319,10 @@ class AccountDetailView(APIView):
                 account_object.assigned_to.all().values_list("id", flat=True)
             )
             recipients = list(set(assigned_to_list) - set(previous_assigned_to_users))
-            send_email_to_assigned_user.delay(
-                recipients,
-                account_object.id,
-            )
+            # send_email_to_assigned_user.delay(
+            #     recipients,
+            #     account_object.id,
+            # )
             return Response(
                 {"error": False, "message": "Account Updated Successfully"},
                 status=status.HTTP_200_OK,
@@ -323,8 +340,9 @@ class AccountDetailView(APIView):
                 {"error": True, "errors": "User company doesnot match with header...."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-        if self.request.profile.role.name != "ADMIN" and not self.request.profile.is_admin:
-            if self.request.profile != self.object.created_by:
+        
+        if self.request.profile.role.has_permission("Delete own accounts"):
+            if self.request.profile.user != self.object.created_by:
                 return Response(
                     {
                         "error": True,
@@ -332,6 +350,15 @@ class AccountDetailView(APIView):
                     },
                     status=status.HTTP_403_FORBIDDEN,
                 )
+        elif not self.request.profile.role.has_permission("Delete any account"):
+            return Response(
+                    {
+                        "error": True,
+                        "errors": "You do not have Permission to perform this action",
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+        
         self.object.delete()
         return Response(
             {"error": False, "message": "Account Deleted Successfully."},
@@ -348,9 +375,10 @@ class AccountDetailView(APIView):
             )
         context = {}
         context["account_obj"] = AccountSerializer(self.account).data
-        if self.request.profile.role.name != "ADMIN" and not self.request.profile.is_admin:
+
+        if self.request.profile.role.has_permission("View own accounts"):
             if not (
-                (self.request.profile == self.account.created_by)
+                (self.request.profile.user == self.account.created_by)
                 or (self.request.profile in self.account.assigned_to.all())
             ):
                 return Response(
@@ -360,10 +388,18 @@ class AccountDetailView(APIView):
                     },
                     status=status.HTTP_403_FORBIDDEN,
                 )
+        elif not self.request.profile.role.has_permission("View all accounts"):
+            return Response(
+                    {
+                        "error": True,
+                        "errors": "You do not have Permission to perform this action",
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )    
 
         comment_permission = False
         if (
-            self.request.profile == self.account.created_by
+            self.request.profile.user == self.account.created_by
             or self.request.profile.is_admin
             or self.request.profile.role.name == "ADMIN"
         ):
@@ -375,7 +411,7 @@ class AccountDetailView(APIView):
                     "user__email"
                 )
             )
-        elif self.request.profile != self.account.created_by:
+        elif self.request.profile.user != self.account.created_by:
             if self.account.created_by:
                 users_mention = [{"username": self.account.created_by.user.email}]
             else:
@@ -452,7 +488,7 @@ class AccountDetailView(APIView):
             )
         if self.request.profile.role.name != "ADMIN" and not self.request.profile.is_admin:
             if not (
-                (self.request.profile == self.account_obj.created_by)
+                (self.request.profile.user == self.account_obj.created_by)
                 or (self.request.profile in self.account_obj.assigned_to.all())
             ):
                 return Response(
@@ -568,7 +604,7 @@ class AccountAttachmentView(APIView):
         if (
             request.profile.role.name == "ADMIN"
             or request.profile.is_admin
-            or request.profile == self.object.created_by
+            or request.profile.user == self.object.created_by
         ):
             self.object.delete()
             return Response(

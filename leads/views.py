@@ -6,6 +6,7 @@ from rest_framework.pagination import LimitOffsetPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.exceptions import PermissionDenied
 
 from accounts.models import Account, Tags
 from common.models import APISettings, Attachments, Comment, Profile
@@ -61,11 +62,14 @@ class LeadListView(APIView, LimitOffsetPagination):
                 "assigned_to",
             )
         ).order_by("-id")
-        if self.request.profile.role.name != "ADMIN" and not self.request.user.is_superuser:
+
+        if self.request.profile.role.has_permission("View own leads"):
             queryset = queryset.filter(
                 Q(assigned_to__in=[self.request.profile])
                 | Q(created_by=self.request.profile.user)
             )
+        elif not self.request.profile.role.has_permission("View all leads"):
+            raise PermissionDenied("You do not have permission to perform this action.")
 
         if params:
             if params.get("name"):
@@ -157,6 +161,12 @@ class LeadListView(APIView, LimitOffsetPagination):
     )
     def post(self, request, *args, **kwargs):
 
+        if not self.request.profile.role.has_permission("Create new leads"): 
+            return Response(
+                {"error": True, "errors": "Permission Denied"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+        
         print('test')
         data = request.data
         serializer = LeadCreateSerializer(data=data, request_obj=request)
@@ -180,10 +190,10 @@ class LeadListView(APIView, LimitOffsetPagination):
                 lead_obj.contacts.add(*obj_contact)
 
             recipients = list(lead_obj.assigned_to.all().values_list("id", flat=True))
-            send_email_to_assigned_user.delay(
-                recipients,
-                lead_obj.id,
-            )
+            # send_email_to_assigned_user.delay(
+            #     recipients,
+            #     lead_obj.id,
+            # )
 
             if request.FILES.get("lead_attachment"):
                 attachment = Attachments()
@@ -274,15 +284,12 @@ class LeadDetailView(APIView):
         ]
         if self.request.profile.user == self.lead_obj.created_by:
             user_assgn_list.append(self.request.profile.user)
-        if self.request.profile.role.name != "ADMIN" and not self.request.user.is_superuser:
+
+        if self.request.profile.role.has_permission("View own leads"):
             if self.request.profile.id not in user_assgn_list:
-                return Response(
-                    {
-                        "error": True,
-                        "errors": "You do not have Permission to perform this action",
-                    },
-                    status=status.HTTP_403_FORBIDDEN,
-                )
+                raise PermissionDenied("You do not have permission to perform this action.")
+        elif not self.request.profile.role.has_permission("View all leads"):
+            raise PermissionDenied("You do not have permission to perform this action.")
 
         comments = Comment.objects.filter(lead=self.lead_obj).order_by("-id")
         attachments = Attachments.objects.filter(lead=self.lead_obj).order_by("-id")
@@ -432,6 +439,28 @@ class LeadDetailView(APIView):
             request_obj=request,
         )
         if serializer.is_valid():
+
+            if self.request.profile.role.has_permission("Edit own leads"):
+                if not (
+                    (self.request.profile.user == self.lead_obj.created_by)
+                    or (self.request.profile in self.lead_obj.assigned_to.all())
+                ):
+                    return Response(
+                        {
+                            "error": True,
+                            "errors": "You do not have Permission to perform this action",
+                        },
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+            elif not self.request.profile.role.has_permission("Edit any lead"):
+                return Response(
+                        {
+                            "error": True,
+                            "errors": "You do not have Permission to perform this action",
+                        },
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+        
             lead_obj = serializer.save()
             previous_assigned_to_users = list(
                 lead_obj.assigned_to.all().values_list("id", flat=True)
@@ -452,10 +481,10 @@ class LeadDetailView(APIView):
                 lead_obj.assigned_to.all().values_list("id", flat=True)
             )
             recipients = list(set(assigned_to_list) - set(previous_assigned_to_users))
-            send_email_to_assigned_user.delay(
-                recipients,
-                lead_obj.id,
-            )
+            # send_email_to_assigned_user.delay(
+            #     recipients,
+            #     lead_obj.id,
+            # )
             if request.FILES.get("lead_attachment"):
                 attachment = Attachments()
                 attachment.created_by = request.profile.user
@@ -545,10 +574,8 @@ class LeadDetailView(APIView):
     def delete(self, request, pk, **kwargs):
         self.object = self.get_object(pk)
         if (
-            request.profile.role.name == "ADMIN"
-            or request.user.is_superuser
-            or request.profile.user
-             == self.object.created_by
+            request.profile.role.has_permission("Delete any lead")
+            or (request.profile.user == self.object.created_by and request.profile.role.has_permission("Delete own leads"))
         ) and self.object.org == request.profile.org:
             self.object.delete()
             return Response(
