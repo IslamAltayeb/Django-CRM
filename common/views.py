@@ -334,8 +334,10 @@ class UserDetailView(APIView):
     )
     def put(self, request, pk, format=None):
         profile_pic_file = request.FILES.get("profile_pic")
-
         params = request.data
+
+        filename = None
+        full_path = None
 
         if profile_pic_file:
             filename = f"profile_{uuid.uuid4().hex}_{profile_pic_file.name}"
@@ -348,8 +350,8 @@ class UserDetailView(APIView):
                 for chunk in profile_pic_file.chunks():
                     destination.write(chunk)
 
-            # Save the relative media path (or full URL if needed)
-            params["profile_pic"] = full_path
+            # Save the relative path to use later
+            params["profile_pic"] = filename
 
         profile = self.get_object(pk)
         address_obj = profile.address
@@ -368,30 +370,30 @@ class UserDetailView(APIView):
                 {"error": True, "errors": "User company doesnot match with header...."},
                 status=status.HTTP_403_FORBIDDEN,
             )
+
         serializer = CreateUserSerializer(
             data=params, instance=profile.user, org=request.profile.org
         )
         address_serializer = BillingAddressSerializer(data=params, instance=address_obj)
         profile_serializer = CreateProfileSerializer(data=params, instance=profile)
+
         data = {}
         if not serializer.is_valid():
             data["contact_errors"] = serializer.errors
         if not address_serializer.is_valid():
-            data["address_errors"] = (address_serializer.errors,)
+            data["address_errors"] = address_serializer.errors
         if not profile_serializer.is_valid():
-            data["profile_errors"] = (profile_serializer.errors,)
+            data["profile_errors"] = profile_serializer.errors
+
         if data:
             data["error"] = True
-            return Response(
-                data,
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return Response(data, status=status.HTTP_400_BAD_REQUEST)
+
         if address_serializer.is_valid():
             address_obj = address_serializer.save()
             user = serializer.save()
 
-            if full_path:
-                # Save file to user.profile_pic
+            if filename:
                 user.profile_pic = filename
 
             user.email = user.email
@@ -400,42 +402,18 @@ class UserDetailView(APIView):
             if password:
                 user.set_password(password)
             user.save()
+
         if profile_serializer.is_valid():
             profile = profile_serializer.save()
             return Response(
                 {"error": False, "message": "User Updated Successfully"},
                 status=status.HTTP_200_OK,
             )
+
         return Response(
             {"error": True, "errors": serializer.errors},
             status=status.HTTP_400_BAD_REQUEST,
         )
-
-    @extend_schema(tags=["users"], parameters=swagger_params1.organization_params)
-    def delete(self, request, pk, format=None):
-        # if self.request.profile.role.name != "ADMIN" and not self.request.profile.is_admin:
-        if not self.request.profile.role.has_permission("Delete user"):
-            return Response(
-                {"error": True, "errors": "Permission Denied"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        self.object = self.get_object(pk)
-        if self.object.id == request.profile.id:
-            return Response(
-                {"error": True, "errors": "Permission Denied"},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-        deleted_by = self.request.profile.user.email
-
-        user = self.object.user
-        address = self.object.address
-        self.object.delete()
-        if user:
-            user.delete()
-
-        if address:
-            address.delete()
-        return Response({"status": "success"}, status=status.HTTP_200_OK)
 
 
 # check_header not working
