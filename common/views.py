@@ -290,12 +290,24 @@ class UserDetailView(APIView):
         context = {}
         context["profile_obj"] = ProfileSerializer(profile_obj).data
 
-        upload_path = os.path.join(
-            settings.MEDIA_URL,
-            "uploads",
-            "profile_pics",
-            context["profile_obj"]["user_details"]["profile_pic"],
-        )
+        # upload_path = os.path.join(
+        #     settings.MEDIA_URL,
+        #     "uploads",
+        #     "profile_pics",
+        #     context["profile_obj"]["user_details"]["profile_pic"],
+        # )
+        profile_pic = context["profile_obj"]["user_details"].get("profile_pic")
+
+        if profile_pic:
+            upload_path = os.path.join(
+                settings.MEDIA_URL,
+                "uploads",
+                "profile_pics",
+                profile_pic,
+            )
+        else:
+            upload_path = None
+
         context["profile_obj"]["user_details"]["profile_pic"] = upload_path
 
         opportunity_list = Opportunity.objects.filter(assigned_to=profile_obj)
